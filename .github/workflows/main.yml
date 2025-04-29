@@ -4,87 +4,75 @@ on:
     branches:
       - main
   workflow_dispatch:
+
 env:
   DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
   DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
   BUILD_NUMBER: ${{ github.run_number }}
-  DROPLET_IP: 15.156.219.253
-  SSH_KEY: ${{ secrets.DROPLET_SSH_KEY }}
+  EC2_IP: 18.222.123.45  # Replace with your EC2 instance public IP
+  SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+
 jobs:
   build-and-push-db:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-        
+
       - name: Login to Docker Hub
         uses: docker/login-action@v2
         with:
           username: ${{ env.DOCKER_USERNAME }}
           password: ${{ env.DOCKER_PASSWORD }}
-          
+
       - name: Pull original images
-        run: |
-          # Pull the images that are specified in docker-compose
-          docker compose -f docker-compose.prod.yml pull
-          
+        run: docker compose -f docker-compose.prod.yml pull
+
       - name: Tag and push Backend image
         run: |
-          # The backend image in your docker-compose.prod.yml
           docker tag infisical/infisical:latest-postgres ${{ env.DOCKER_USERNAME }}/infisical:latest
           docker tag infisical/infisical:latest-postgres ${{ env.DOCKER_USERNAME }}/infisical:${{ env.BUILD_NUMBER }}
           docker push ${{ env.DOCKER_USERNAME }}/infisical:latest
           docker push ${{ env.DOCKER_USERNAME }}/infisical:${{ env.BUILD_NUMBER }}
-      
+
       - name: Tag and push Postgres image
         run: |
-          # The Postgres image in your docker-compose.prod.yml
           docker tag postgres:14-alpine ${{ env.DOCKER_USERNAME }}/postgres:latest
           docker tag postgres:14-alpine ${{ env.DOCKER_USERNAME }}/postgres:${{ env.BUILD_NUMBER }}
           docker push ${{ env.DOCKER_USERNAME }}/postgres:latest
           docker push ${{ env.DOCKER_USERNAME }}/postgres:${{ env.BUILD_NUMBER }}
-      
+
       - name: Tag and push Redis image
         run: |
-          # The Redis image in your docker-compose.prod.yml
           docker tag redis ${{ env.DOCKER_USERNAME }}/redis-image:latest
           docker tag redis ${{ env.DOCKER_USERNAME }}/redis-image:${{ env.BUILD_NUMBER }}
           docker push ${{ env.DOCKER_USERNAME }}/redis-image:latest
           docker push ${{ env.DOCKER_USERNAME }}/redis-image:${{ env.BUILD_NUMBER }}
-  
+
   deploy:
-    name: CD - Automated Deployment
+    name: CD - Deploy to AWS EC2
     runs-on: ubuntu-latest
     needs: build-and-push-db
     steps:
-      - name: Install SSH Key for DigitalOcean Droplet
+      - name: Install SSH Key for AWS EC2
         uses: webfactory/ssh-agent@v0.5.3
         with:
-          ssh-private-key: ${{ secrets.DROPLET_SSH_KEY }}
-      - name: Deploy to DigitalOcean Droplet
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: Deploy to EC2 Instance
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
-          ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} << EOF
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ env.EC2_IP }} << 'EOF'
             docker pull ${DOCKERHUB_USERNAME}/infisical:latest
             docker pull ${DOCKERHUB_USERNAME}/postgres:latest
             docker pull ${DOCKERHUB_USERNAME}/redis-image:latest
-            
-            # docker stop infisical-backend || true
-            # docker stop infisical-db || true
-            # docker stop infisical-dev-redis || true
-            
-            # docker rm infisical-backend || true
-            # docker rm infisical-db || true
-            # docker rm infisical-dev-redis || true
-            
-            # Create a network if it doesn't exist
+
             docker network create infisical-network || true
-            
-            # Run containers with the network
+
             docker run -d --name infisical-backend --network infisical-network -p 80:8080 ${DOCKERHUB_USERNAME}/infisical:latest
             docker run -d --name infisical-db --network infisical-network -p 5432:5432 ${DOCKERHUB_USERNAME}/postgres:latest
             docker run -d --name infisical-dev-redis --network infisical-network -p 6379:6379 ${DOCKERHUB_USERNAME}/redis-image:latest
-            
+
             docker image prune --all --force
           EOF
