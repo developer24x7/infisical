@@ -1,0 +1,49 @@
+# main
+name: CI - Build & Push DB Images Infisical
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+  BUILD_NUMBER: ${{ github.run_number }}
+
+jobs:
+  build-and-push-db:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ env.DOCKER_USERNAME }}
+          password: ${{ env.DOCKER_PASSWORD }}
+
+      - name: Build images via Docker Compose
+        run: |
+          docker compose -f docker-compose.prod.yml up
+
+      - name: Tag and push Infisical image
+        run: |
+          docker tag your_dockerhub_username/infisical:latest ${{ env.DOCKER_USERNAME }}/infisical:${{ env.BUILD_NUMBER }}
+          docker push ${{ env.DOCKER_USERNAME }}/infisical:latest
+          docker push ${{ env.DOCKER_USERNAME }}/infisical:${{ env.BUILD_NUMBER }}
+
+      - name: Tag and push Postgres image
+        run: |
+          docker tag your_dockerhub_username/postgres:latest ${{ env.DOCKER_USERNAME }}/postgres:${{ env.BUILD_NUMBER }}
+          docker push ${{ env.DOCKER_USERNAME }}/postgres:latest
+          docker push ${{ env.DOCKER_USERNAME }}/postgres:${{ env.BUILD_NUMBER }}
+
+      - name: Tag and push Redis image
+        run: |
+          docker tag your_dockerhub_username/redis-image:latest ${{ env.DOCKER_USERNAME }}/redis-image:${{ env.BUILD_NUMBER }}
+          docker push ${{ env.DOCKER_USERNAME }}/redis-image:latest
+          docker push ${{ env.DOCKER_USERNAME }}/redis-image:${{ env.BUILD_NUMBER }}
