@@ -1,4 +1,4 @@
-name: CI - Build & Push DB Images Infisical
+name: CI/CD - Build, Push & Deploy Infisical
 on:
   push:
     branches:
@@ -53,10 +53,9 @@ jobs:
           docker push ${{ env.DOCKER_USERNAME }}/redis-image:${{ env.BUILD_NUMBER }}
   
   deploy:
-    name: CD - Manual Deployment
+    name: CD - Automated Deployment
     runs-on: ubuntu-latest
     needs: build-and-push-db
-    if: github.event_name == 'workflow_dispatch'
     steps:
       - name: Install SSH Key for DigitalOcean Droplet
         uses: webfactory/ssh-agent@v0.5.3
