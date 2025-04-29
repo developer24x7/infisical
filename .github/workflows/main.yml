@@ -9,7 +9,7 @@ env:
   DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
   DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
   BUILD_NUMBER: ${{ github.run_number }}
-  EC2_IP: 18.222.123.45  # Replace with your EC2 instance public IP
+  EC2_IP: 15.156.219.253  # Replace with your EC2 instance public IP
   SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
 
 jobs:
