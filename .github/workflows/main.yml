@@ -71,13 +71,13 @@ jobs:
             docker pull ${DOCKERHUB_USERNAME}/postgres:latest
             docker pull ${DOCKERHUB_USERNAME}/redis-image:latest
             
-            docker stop infisical-backend || true
-            docker stop infisical-db || true
-            docker stop infisical-dev-redis || true
+            # docker stop infisical-backend || true
+            # docker stop infisical-db || true
+            # docker stop infisical-dev-redis || true
             
-            docker rm infisical-backend || true
-            docker rm infisical-db || true
-            docker rm infisical-dev-redis || true
+            # docker rm infisical-backend || true
+            # docker rm infisical-db || true
+            # docker rm infisical-dev-redis || true
             
             # Create a network if it doesn't exist
             docker network create infisical-network || true
