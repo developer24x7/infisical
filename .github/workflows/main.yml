@@ -1,17 +1,19 @@
 name: CI/CD - Build, Push & Deploy Infisical
-
 on:
   push:
     branches:
       - main
   workflow_dispatch:
-
 env:
   DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
   DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
   BUILD_NUMBER: ${{ github.run_number }}
-  EC2_IP: 15.156.219.253 # Replace with your EC2 instance public IP
+  EC2_IP: 15.156.219.253
   SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_REGION: ca-central-1
+  SECRET_ARN: arn:aws:secretsmanager:ca-central-1:659666453025:secret:infisical-secret-NGmqNX
 
 jobs:
   build-and-push-db:
@@ -59,30 +61,125 @@ jobs:
         uses: webfactory/ssh-agent@v0.5.3
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+          
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: Get secrets from AWS Secrets Manager
+        id: secrets
+        run: |
+          SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ env.SECRET_ARN }} --query SecretString --output text)
+          echo "::add-mask::$SECRET_STRING"
+          echo "SECRET_STRING<<EOF" >> $GITHUB_ENV
+          echo "$SECRET_STRING" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
       - name: Deploy to EC2 Instance
         run: |
+          # Extract specific values from the secrets JSON
+          ENCRYPTION_KEY=$(echo '${{ env.SECRET_STRING }}' | jq -r '.ENCRYPTION_KEY')
+          AUTH_SECRET=$(echo '${{ env.SECRET_STRING }}' | jq -r '.AUTH_SECRET') 
+          POSTGRES_PASSWORD=$(echo '${{ env.SECRET_STRING }}' | jq -r '.POSTGRES_PASSWORD')
+          POSTGRES_USER=$(echo '${{ env.SECRET_STRING }}' | jq -r '.POSTGRES_USER')
+          POSTGRES_DB=$(echo '${{ env.SECRET_STRING }}' | jq -r '.POSTGRES_DB')
+          
           ssh -o StrictHostKeyChecking=no ubuntu@${{ env.EC2_IP }} << EOF
-          # Add user to docker group if not already done
-          sudo usermod -aG docker ubuntu
+          # Switch to root user
+          sudo su -
+          
+          # Install AWS CLI if not already installed
+          if ! command -v aws &> /dev/null; then
+            apt-get update
+            apt-get install -y awscli
+          fi
+          
+          # Set up AWS credentials temporarily
+          export AWS_ACCESS_KEY_ID=${{ env.AWS_ACCESS_KEY_ID }}
+          export AWS_SECRET_ACCESS_KEY=${{ env.AWS_SECRET_ACCESS_KEY }}
+          export AWS_REGION=${{ env.AWS_REGION }}
+          
+          # Fetch secrets from AWS Secrets Manager
+          SECRET_JSON=\$(aws secretsmanager get-secret-value --secret-id ${{ env.SECRET_ARN }} --query SecretString --output text)
+          
+          # Extract required values from the JSON
+          ENCRYPTION_KEY=\$(echo "\$SECRET_JSON" | jq -r '.ENCRYPTION_KEY')
+          AUTH_SECRET=\$(echo "\$SECRET_JSON" | jq -r '.AUTH_SECRET')
+          POSTGRES_PASSWORD=\$(echo "\$SECRET_JSON" | jq -r '.POSTGRES_PASSWORD')
+          POSTGRES_USER=\$(echo "\$SECRET_JSON" | jq -r '.POSTGRES_USER')
+          POSTGRES_DB=\$(echo "\$SECRET_JSON" | jq -r '.POSTGRES_DB')
+          SITE_URL=\$(echo "\$SECRET_JSON" | jq -r '.SITE_URL')
+          
+          # Generate .env file for docker-compose
+          cat > /root/infisical.env << EOL
+          ENCRYPTION_KEY=\$ENCRYPTION_KEY
+          AUTH_SECRET=\$AUTH_SECRET
+          POSTGRES_PASSWORD=\$POSTGRES_PASSWORD
+          POSTGRES_USER=\$POSTGRES_USER
+          POSTGRES_DB=\$POSTGRES_DB
+          DB_CONNECTION_URI=postgres://\$POSTGRES_USER:\$POSTGRES_PASSWORD@infisical-db:5432/\$POSTGRES_DB
+          REDIS_URL=redis://infisical-dev-redis:6379
+          SITE_URL=\$SITE_URL
+          EOL
           
           # Stop and remove existing containers
-          # sudo docker stop infisical-backend infisical-db infisical-dev-redis || true
-          # sudo docker rm infisical-backend infisical-db infisical-dev-redis || true
+          docker stop infisical-backend infisical-db infisical-dev-redis || true
+          docker rm infisical-backend infisical-db infisical-dev-redis || true
           
           # Pull the latest images
-          sudo docker pull ${{ env.DOCKER_USERNAME }}/infisical:latest
-          sudo docker pull ${{ env.DOCKER_USERNAME }}/postgres:latest
-          sudo docker pull ${{ env.DOCKER_USERNAME }}/redis-image:latest
+          docker pull ${{ env.DOCKER_USERNAME }}/infisical:latest
+          docker pull ${{ env.DOCKER_USERNAME }}/postgres:latest
+          docker pull ${{ env.DOCKER_USERNAME }}/redis-image:latest
           
           # Create network if it doesn't exist
-          sudo docker network create infisical-network || true
+          docker network create infisical-network || true
           
-          # Run containers
-          sudo docker run -d --name infisical-backend --network infisical-network -p 80:8080 ${{ env.DOCKER_USERNAME }}/infisical:latest
-          sudo docker run -d --name infisical-db --network infisical-network -p 5432:5432 ${{ env.DOCKER_USERNAME }}/postgres:latest
-          sudo docker run -d --name infisical-dev-redis --network infisical-network -p 6379:6379 ${{ env.DOCKER_USERNAME }}/redis-image:latest
+          # Create Docker volumes for data persistence
+          docker volume create postgres_data || true
           
-          # Clean up unused images
-          sudo docker image prune --all --force
+          # Run Postgres container with environment variables from secrets
+          docker run -d --name infisical-db \
+            --network infisical-network \
+            -p 5432:5432 \
+            -v postgres_data:/var/lib/postgresql/data \
+            -e POSTGRES_USER=\$POSTGRES_USER \
+            -e POSTGRES_PASSWORD=\$POSTGRES_PASSWORD \
+            -e POSTGRES_DB=\$POSTGRES_DB \
+            ${{ env.DOCKER_USERNAME }}/postgres:latest
+          
+          # Wait for postgres to start up
+          sleep 10
+          
+          # Run Redis container
+          docker run -d --name infisical-dev-redis \
+            --network infisical-network \
+            -p 6379:6379 \
+            ${{ env.DOCKER_USERNAME }}/redis-image:latest
+          
+          # Run Infisical backend with environment variables from secrets
+          docker run -d --name infisical-backend \
+            --network infisical-network \
+            -p 80:8080 \
+            --env-file /root/infisical.env \
+            ${{ env.DOCKER_USERNAME }}/infisical:latest
+          
+          # Check container status
+          docker ps -a
+          
+          # Print logs for troubleshooting
+          echo "===== POSTGRES LOGS ====="
+          docker logs infisical-db
+          
+          echo "===== INFISICAL LOGS ====="
+          docker logs infisical-backend
+          
+          # Clean up unused images and remove credentials
+          docker image prune --all --force
+          rm -f /root/infisical.env
+          unset AWS_ACCESS_KEY_ID
+          unset AWS_SECRET_ACCESS_KEY
+          unset AWS_REGION
           EOF
