@@ -47,20 +47,23 @@ jobs:
       - name: Build images via Docker Compose
         run: docker compose -f docker-compose.prod.yml up
         
-      - name: Tag and push Infisical image
+      - name: Tag and push Backend image
         run: |
-          docker tag infisical/infisical:latest ${{ env.DOCKER_USERNAME }}/infisical:${{ env.BUILD_NUMBER }}
+          docker tag infisical/infisical:latest-postgres ${{ env.DOCKER_USERNAME }}/infisical:latest
+          docker tag infisical/infisical:latest-postgres ${{ env.DOCKER_USERNAME }}/infisical:${{ env.BUILD_NUMBER }}
           docker push ${{ env.DOCKER_USERNAME }}/infisical:latest
           docker push ${{ env.DOCKER_USERNAME }}/infisical:${{ env.BUILD_NUMBER }}
 
       - name: Tag and push Postgres image
         run: |
-          docker tag postgres/postgres:latest ${{ env.DOCKER_USERNAME }}/postgres:${{ env.BUILD_NUMBER }}
+          docker tag postgres:14-alpine ${{ env.DOCKER_USERNAME }}/postgres:latest
+          docker tag postgres:14-alpine ${{ env.DOCKER_USERNAME }}/postgres:${{ env.BUILD_NUMBER }}
           docker push ${{ env.DOCKER_USERNAME }}/postgres:latest
           docker push ${{ env.DOCKER_USERNAME }}/postgres:${{ env.BUILD_NUMBER }}
 
       - name: Tag and push Redis image
         run: |
-          docker tag redis/redis-image:latest ${{ env.DOCKER_USERNAME }}/redis-image:${{ env.BUILD_NUMBER }}
+          docker tag redis ${{ env.DOCKER_USERNAME }}/redis-image:latest
+          docker tag redis ${{ env.DOCKER_USERNAME }}/redis-image:${{ env.BUILD_NUMBER }}
           docker push ${{ env.DOCKER_USERNAME }}/redis-image:latest
           docker push ${{ env.DOCKER_USERNAME }}/redis-image:${{ env.BUILD_NUMBER }}
