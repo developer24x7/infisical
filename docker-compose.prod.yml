@@ -1,29 +1,31 @@
-version: "3.8"
+version: "3"
 
 services:
   backend:
     container_name: infisical-backend
-    image: infisical/infisical:latest-postgres
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_started
+    image: infisical/infisical:latest-postgres
+    pull_policy: always
+    env_file: .env
     ports:
       - 80:8080
     environment:
-      NODE_ENV: production
-    env_file: /root/infisical.env
+      - NODE_ENV=production
     networks:
       - infisical
 
   redis:
-    container_name: infisical-dev-redis
     image: redis
+    container_name: infisical-dev-redis
+    env_file: .env
     restart: always
     environment:
-      ALLOW_EMPTY_PASSWORD: yes
+      - ALLOW_EMPTY_PASSWORD=yes
     ports:
       - 6379:6379
     networks:
@@ -35,24 +37,22 @@ services:
     container_name: infisical-db
     image: postgres:14-alpine
     restart: always
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    env_file: /root/infisical.env
+    env_file: .env
     volumes:
       - pg_data:/var/lib/postgresql/data
     networks:
       - infisical
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: "pg_isready --username=${POSTGRES_USER} && psql --username=${POSTGRES_USER} --list"
       interval: 5s
       timeout: 10s
       retries: 10
 
 volumes:
   pg_data:
+    driver: local
   redis_data:
+    driver: local
 
 networks:
   infisical:
