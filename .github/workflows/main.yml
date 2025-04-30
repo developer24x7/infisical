@@ -1,3 +1,4 @@
+
 name: CI/CD - Build, Push & Deploy Infisical
 on:
   push:
@@ -58,12 +59,12 @@ jobs:
     needs: build-and-push-db
     steps:
       - name: Install SSH Key for AWS EC2
-        uses: webfactory/ssh-agent@v0.5.3
+        uses: webfactory/ssh-agent@v0.8.0  # Updated to newer version
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
           
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v2  # Updated to v2
         with:
           aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
@@ -91,10 +92,14 @@ jobs:
           # Switch to root user
           sudo su -
           
-          # Install AWS CLI if not already installed
+          # Install AWS CLI v2 if not already installed - Fixed AWS CLI installation
           if ! command -v aws &> /dev/null; then
             apt-get update
-            apt-get install -y awscli
+            apt-get install -y unzip curl
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            ./aws/install
+            rm -rf aws awscliv2.zip
           fi
           
           # Set up AWS credentials temporarily
@@ -140,7 +145,10 @@ jobs:
           # Create Docker volumes for data persistence
           docker volume create postgres_data || true
           
-          # Run Postgres container with environment variables from secrets
+          # Check secrets are correctly extracted - Debug info
+          echo "DEBUG: Running with POSTGRES_USER=\$POSTGRES_USER DB=\$POSTGRES_DB (password masked)"
+          
+          # Run Postgres container with explicitly set environment variables
           docker run -d --name infisical-db \
             --network infisical-network \
             -p 5432:5432 \
@@ -151,7 +159,8 @@ jobs:
             ${{ env.DOCKER_USERNAME }}/postgres:latest
           
           # Wait for postgres to start up
-          sleep 10
+          echo "Waiting for PostgreSQL to initialize..."
+          sleep 20
           
           # Run Redis container
           docker run -d --name infisical-dev-redis \
@@ -173,8 +182,15 @@ jobs:
           echo "===== POSTGRES LOGS ====="
           docker logs infisical-db
           
+          echo "===== REDIS LOGS ====="
+          docker logs infisical-dev-redis
+          
           echo "===== INFISICAL LOGS ====="
           docker logs infisical-backend
+          
+          # Verify network connectivity between containers
+          echo "===== NETWORK TEST ====="
+          docker exec infisical-backend ping -c 2 infisical-db || echo "Network connectivity issue detected"
           
           # Clean up unused images and remove credentials
           docker image prune --all --force
@@ -183,3 +199,4 @@ jobs:
           unset AWS_SECRET_ACCESS_KEY
           unset AWS_REGION
           EOF
+```
