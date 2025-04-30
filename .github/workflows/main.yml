@@ -45,8 +45,8 @@ jobs:
           password: ${{ env.DOCKER_PASSWORD }}
 
       - name: Build images via Docker Compose
-        run: docker compose -f docker-compose.prod.yml build
-
+        run: docker compose -f docker-compose.prod.yml up
+        
       - name: Tag and push Infisical image
         run: |
           docker tag pocdeveloper/infisical:latest ${{ env.DOCKER_USERNAME }}/infisical:${{ env.BUILD_NUMBER }}
