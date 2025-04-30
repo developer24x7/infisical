@@ -1,4 +1,5 @@
 name: CI/CD - Build, Push & Deploy Infisical
+
 on:
   push:
     branches:
@@ -9,7 +10,7 @@ env:
   DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
   DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
   BUILD_NUMBER: ${{ github.run_number }}
-  EC2_IP: 15.156.219.253  # Replace with your EC2 instance public IP
+  EC2_IP: 15.156.219.253 # Replace with your EC2 instance public IP
   SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
 
 jobs:
@@ -60,19 +61,28 @@ jobs:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
       - name: Deploy to EC2 Instance
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
-          ssh -o StrictHostKeyChecking=no ubuntu@${{ env.EC2_IP }} << 'EOF'
-            docker pull ${DOCKERHUB_USERNAME}/infisical:latest
-            docker pull ${DOCKERHUB_USERNAME}/postgres:latest
-            docker pull ${DOCKERHUB_USERNAME}/redis-image:latest
-
-            docker network create infisical-network || true
-
-            docker run -d --name infisical-backend --network infisical-network -p 80:8080 ${DOCKERHUB_USERNAME}/infisical:latest
-            docker run -d --name infisical-db --network infisical-network -p 5432:5432 ${DOCKERHUB_USERNAME}/postgres:latest
-            docker run -d --name infisical-dev-redis --network infisical-network -p 6379:6379 ${DOCKERHUB_USERNAME}/redis-image:latest
-
-            docker image prune --all --force
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ env.EC2_IP }} << EOF
+          # Add user to docker group if not already done
+          sudo usermod -aG docker ubuntu
+          
+          # Stop and remove existing containers
+          # sudo docker stop infisical-backend infisical-db infisical-dev-redis || true
+          # sudo docker rm infisical-backend infisical-db infisical-dev-redis || true
+          
+          # Pull the latest images
+          sudo docker pull ${{ env.DOCKER_USERNAME }}/infisical:latest
+          sudo docker pull ${{ env.DOCKER_USERNAME }}/postgres:latest
+          sudo docker pull ${{ env.DOCKER_USERNAME }}/redis-image:latest
+          
+          # Create network if it doesn't exist
+          sudo docker network create infisical-network || true
+          
+          # Run containers
+          sudo docker run -d --name infisical-backend --network infisical-network -p 80:8080 ${{ env.DOCKER_USERNAME }}/infisical:latest
+          sudo docker run -d --name infisical-db --network infisical-network -p 5432:5432 ${{ env.DOCKER_USERNAME }}/postgres:latest
+          sudo docker run -d --name infisical-dev-redis --network infisical-network -p 6379:6379 ${{ env.DOCKER_USERNAME }}/redis-image:latest
+          
+          # Clean up unused images
+          sudo docker image prune --all --force
           EOF
