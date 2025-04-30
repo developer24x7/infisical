@@ -9,7 +9,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-    image: ${DOCKER_USERNAME}/infisical:${BUILD_NUMBER}
+    image: infisical/infisical:latest-postgres
+    pull_policy: always
     env_file: .env
     ports:
       - 80:8080
@@ -19,10 +20,12 @@ services:
       - infisical
 
   redis:
+    image: redis
     container_name: infisical-dev-redis
-    image: ${DOCKER_USERNAME}/redis-image:${BUILD_NUMBER}
-    restart: always
     env_file: .env
+    restart: always
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
     ports:
       - 6379:6379
     networks:
@@ -32,7 +35,7 @@ services:
 
   db:
     container_name: infisical-db
-    image: ${DOCKER_USERNAME}/postgres:${BUILD_NUMBER}
+    image: postgres:14-alpine
     restart: always
     env_file: .env
     volumes:
@@ -40,14 +43,16 @@ services:
     networks:
       - infisical
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      test: "pg_isready --username=${POSTGRES_USER} && psql --username=${POSTGRES_USER} --list"
       interval: 5s
       timeout: 10s
       retries: 10
 
 volumes:
   pg_data:
+    driver: local
   redis_data:
+    driver: local
 
 networks:
   infisical:
