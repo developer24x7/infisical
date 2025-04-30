@@ -28,7 +28,14 @@ jobs:
           username: ${{ env.DOCKER_USERNAME }}
           password: ${{ env.DOCKER_PASSWORD }}
 
-      - name: Pull original images
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: Build Docker images
         run: docker compose -f docker-compose.prod.yml pull
 
       - name: Tag and push Backend image
@@ -73,7 +80,6 @@ jobs:
         id: secrets
         run: |
           SECRET_STRING=$(aws secretsmanager get-secret-value --secret-id ${{ env.SECRET_ARN }} --query SecretString --output text)
-          echo "::add-mask::$SECRET_STRING"
           echo "SECRET_STRING<<EOF" >> $GITHUB_ENV
           echo "$SECRET_STRING" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
@@ -81,12 +87,13 @@ jobs:
       - name: Deploy to EC2 Instance
         run: |
           # Extract specific values from the secrets JSON
-          ENCRYPTION_KEY=$(echo '${{ env.SECRET_STRING }}' | jq -r '.ENCRYPTION_KEY')
-          AUTH_SECRET=$(echo '${{ env.SECRET_STRING }}' | jq -r '.AUTH_SECRET') 
-          POSTGRES_PASSWORD=$(echo '${{ env.SECRET_STRING }}' | jq -r '.POSTGRES_PASSWORD')
-          POSTGRES_USER=$(echo '${{ env.SECRET_STRING }}' | jq -r '.POSTGRES_USER')
-          POSTGRES_DB=$(echo '${{ env.SECRET_STRING }}' | jq -r '.POSTGRES_DB')
-          
+          ENCRYPTION_KEY=$(echo "${{ env.SECRET_STRING }}" | jq -r '.ENCRYPTION_KEY')
+          AUTH_SECRET=$(echo "${{ env.SECRET_STRING }}" | jq -r '.AUTH_SECRET') 
+          POSTGRES_PASSWORD=$(echo "${{ env.SECRET_STRING }}" | jq -r '.POSTGRES_PASSWORD')
+          POSTGRES_USER=$(echo "${{ env.SECRET_STRING }}" | jq -r '.POSTGRES_USER')
+          POSTGRES_DB=$(echo "${{ env.SECRET_STRING }}" | jq -r '.POSTGRES_DB')
+          SITE_URL=$(echo "${{ env.SECRET_STRING }}" | jq -r '.SITE_URL')
+
           ssh -o StrictHostKeyChecking=no ubuntu@${{ env.EC2_IP }} << EOF
           # Switch to root user
           sudo su -
@@ -112,7 +119,7 @@ jobs:
           POSTGRES_USER=\$(echo "\$SECRET_JSON" | jq -r '.POSTGRES_USER')
           POSTGRES_DB=\$(echo "\$SECRET_JSON" | jq -r '.POSTGRES_DB')
           SITE_URL=\$(echo "\$SECRET_JSON" | jq -r '.SITE_URL')
-          
+
           # Generate .env file for docker-compose
           cat > /root/infisical.env << EOL
           ENCRYPTION_KEY=\$ENCRYPTION_KEY
