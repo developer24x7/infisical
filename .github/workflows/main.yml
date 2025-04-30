@@ -199,4 +199,3 @@ jobs:
           unset AWS_SECRET_ACCESS_KEY
           unset AWS_REGION
           EOF
-```
