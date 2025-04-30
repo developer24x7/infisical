@@ -44,32 +44,27 @@ jobs:
           username: ${{ env.DOCKER_USERNAME }}
           password: ${{ env.DOCKER_PASSWORD }}
 
-      - name: Build images via Docker Compose
-        run: docker compose -f docker-compose.prod.yml up
-        
-      # Tag and push the Infisical image
-      - name: Tag and push Infisical image
+      - name: Pull original images
+        run: docker compose -f docker-compose.prod.yml pull
+
+      - name: Tag and push Backend image
         run: |
-          docker tag infisical/infisical:latest-postgres ${{ env.DOCKER_USERNAME }}/infisical:${{ env.BUILD_NUMBER }}
           docker tag infisical/infisical:latest-postgres ${{ env.DOCKER_USERNAME }}/infisical:latest
-          
-          docker push ${{ env.DOCKER_USERNAME }}/infisical:${{ env.BUILD_NUMBER }}
+          docker tag infisical/infisical:latest-postgres ${{ env.DOCKER_USERNAME }}/infisical:${{ env.BUILD_NUMBER }}
           docker push ${{ env.DOCKER_USERNAME }}/infisical:latest
-      
-      # Tag and push the Postgres image
+          docker push ${{ env.DOCKER_USERNAME }}/infisical:${{ env.BUILD_NUMBER }}
+
       - name: Tag and push Postgres image
         run: |
-          docker tag postgres:14-alpine ${{ env.DOCKER_USERNAME }}/postgres:${{ env.BUILD_NUMBER }}
           docker tag postgres:14-alpine ${{ env.DOCKER_USERNAME }}/postgres:latest
-          
-          docker push ${{ env.DOCKER_USERNAME }}/postgres:${{ env.BUILD_NUMBER }}
+          docker tag postgres:14-alpine ${{ env.DOCKER_USERNAME }}/postgres:${{ env.BUILD_NUMBER }}
           docker push ${{ env.DOCKER_USERNAME }}/postgres:latest
-      
-      # Tag and push the Redis image
+          docker push ${{ env.DOCKER_USERNAME }}/postgres:${{ env.BUILD_NUMBER }}
+
       - name: Tag and push Redis image
         run: |
-          docker tag redis:latest ${{ env.DOCKER_USERNAME }}/redis-image:${{ env.BUILD_NUMBER }}
-          docker tag redis:latest ${{ env.DOCKER_USERNAME }}/redis-image:latest
-          
-          docker push ${{ env.DOCKER_USERNAME }}/redis-image:${{ env.BUILD_NUMBER }}
+          docker tag redis ${{ env.DOCKER_USERNAME }}/redis-image:latest
+          docker tag redis ${{ env.DOCKER_USERNAME }}/redis-image:${{ env.BUILD_NUMBER }}
           docker push ${{ env.DOCKER_USERNAME }}/redis-image:latest
+          docker push ${{ env.DOCKER_USERNAME }}/redis-image:${{ env.BUILD_NUMBER }}
+
